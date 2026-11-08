@@ -25,8 +25,8 @@ Nothing is synced over the network, and the mod is purely cosmetic. Players with
 ## Status
 
 - [x] Mod scaffold, scripts, `model.cfg`, Blender prep script
-- [x] Owl model chosen: "Barn owl" by Joacooficial (CC-BY 4.0), see `CREDITS.md`
-- [ ] Download the owl into `source/owl/`
+- [x] Owl model chosen: "BarnOwl" by BloodTigerWolfSketchF (Sketchfab Free Standard), see `CREDITS.md`
+- [x] Owl source downloaded (kept local, git-ignored)
 - [ ] Run the Blender pipeline, then export `owl.p3d` and the `.paa` textures
 - [ ] Test in game (single player and multiplayer)
 

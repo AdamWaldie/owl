@@ -4,3 +4,7 @@ releases/
 *.blend1
 source/owl/*.blend
 !source/owl/README.md
+# Owl source is under the Sketchfab Free Standard licence, which forbids
+# redistributing the source files on their own. Keep them out of git.
+source/owl/*
+!source/owl/README.md
