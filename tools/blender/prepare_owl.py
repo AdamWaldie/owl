@@ -1,47 +1,55 @@
 """
 Prepare a downloaded, rigged owl (glTF/GLB or FBX) for Arma 3.
 
-Run headless:
-    blender --background --python tools/blender/prepare_owl.py -- \
+Run headless (values shown are the ones for the BarnOwl source model):
+    blender --background --factory-startup --python tools/blender/prepare_owl.py -- \
         --input source/owl/owl.glb --output source/owl/owl_prepared.blend \
-        [--tris 4000] [--scale-to 0.6]
+        --map @tools/blender/owl_barn.map --src-up +y --src-forward +z \
+        --scale-to 0.35 --tris 3000
 
 What it does:
-  1. Imports the model and joins its meshes into one.
-  2. Scales it so the body length is --scale-to metres (a real owl is ~0.5-0.65 m).
-  3. Converts smooth skinning into rigid bone selections. Arma model.cfg
-     animations move whole selections, so each vertex goes to the single
-     bone with the highest weight, then that bone is mapped onto one of
-     body / head / wing_l / wingtip_l / wing_r / wingtip_r.
-  4. Decimates to --tris triangles (Arma ambient objects should stay small).
-  5. Builds a Memory LOD mesh with the axis_* point pairs from the rig's
-     joint positions, and a simple box Geometry LOD.
+  1. Imports the model and bakes every skinned mesh into world space, using the
+     same space as the armature's rest-pose joints.
+  2. Rotates it to Arma's convention: forward +Y, up +Z, right +X. Blender +Y
+     becomes Arma +Z when A3OB exports. --src-up and --src-forward describe the
+     imported model; check them in the Blender viewport if unsure.
+  3. Scales it so its nose-to-tail length is --scale-to metres. A barn owl is
+     about 0.35 m long with a 0.9 m wingspan.
+  4. Converts smooth skinning into rigid selections. Arma model.cfg animations
+     move whole selections, so each vertex goes to its highest-weight bone, and
+     that bone maps onto body / head / wing_l / wingtip_l / wing_r / wingtip_r.
+  5. Decimates to --tris triangles if the model is larger.
+  6. Builds a Memory object with axis_* point pairs and a box Geometry object.
 
-Export to P3D afterwards with the Arma 3 Object Builder add-on
-(see docs/BUILDING.md). This script deliberately does not touch that add-on's
-properties, so it works whichever add-on version you have.
+Export to P3D afterwards with tools/blender/export_p3d.py, which needs the
+Arma 3 Object Builder add-on.
 
-Bone-name mapping is heuristic. If your rig uses unusual names, edit BONE_RULES
-or pass --map "SourceBone=wing_l,OtherBone=head".
+Bone mapping: --map "Bone=target,..." (or @file, one per line, '#' comments)
+assigns that bone AND all its descendants; a deeper entry wins. The FIRST
+entry listed for each target is that part's pivot joint. Unmapped bones fall
+back to name heuristics (BONE_RULES), then to "body".
 """
 
 import argparse
+import math
 import re
 import sys
 
 import bpy
 import bmesh
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 TARGET_BONES = ("body", "head", "wing_l", "wingtip_l", "wing_r", "wingtip_r")
 
-# (regex on lower-cased bone name, target). First match wins. Side is detected
-# separately and substituted for "{side}".
+# (regex on lower-cased bone name, target). First match wins. "{side}" is
+# replaced by l/r using the bone's position.
 BONE_RULES = [
     (r"head|neck|skull|beak|eye", "head"),
     (r"hand|wrist|finger|tip|primary", "wingtip_{side}"),
     (r"wing|arm|shoulder|clavicle|forearm|feather", "wing_{side}"),
 ]
+
+AXES = {"x": Vector((1, 0, 0)), "y": Vector((0, 1, 0)), "z": Vector((0, 0, 1))}
 
 
 def parse_args():
@@ -50,30 +58,31 @@ def parse_args():
     p.add_argument("--input", required=True)
     p.add_argument("--output", required=True)
     p.add_argument("--tris", type=int, default=4000)
-    p.add_argument("--scale-to", type=float, default=0.6)
-    p.add_argument("--map", default="", help="Explicit SourceBone=target pairs, comma separated")
+    p.add_argument("--scale-to", type=float, default=0.35, help="Nose-to-tail length in metres")
+    p.add_argument("--map", default="", help="Bone=target pairs (comma separated) or @file")
+    p.add_argument("--src-up", default="+z", help="Imported model's up axis, e.g. +z or +y")
+    p.add_argument("--src-forward", default="-y", help="Imported model's facing axis, e.g. -y or +z")
+    p.add_argument("--single-sided", action="store_true", help="Don't add back faces for double-sided materials")
     return p.parse_args(argv)
 
 
-def side_of(name, head_x):
-    n = name.lower()
-    if re.search(r"(^|[._\-\s])l$|(^|[._\-\s])l[._\-\s]|left", n):
-        return "l"
-    if re.search(r"(^|[._\-\s])r$|(^|[._\-\s])r[._\-\s]|right", n):
-        return "r"
-    # Fall back to position. With the glTF importer the model faces -Y,
-    # so +X is the owl's left.
-    return "l" if head_x > 0 else "r"
+def axis(spec):
+    m = re.fullmatch(r"([+-]?)([xyz])", spec.strip().lower())
+    if not m:
+        raise SystemExit(f"Bad axis {spec!r}; use e.g. +y or -z")
+    return AXES[m.group(2)] * (-1 if m.group(1) == "-" else 1)
 
 
-def map_bone(bone, explicit):
-    if bone.name in explicit:
-        return explicit[bone.name]
-    n = bone.name.lower()
-    for pattern, target in BONE_RULES:
-        if re.search(pattern, n):
-            return target.format(side=side_of(bone.name, bone.head_local.x))
-    return "body"
+def load_map(spec):
+    if spec.startswith("@"):
+        pairs = [line.split("#")[0].strip() for line in open(spec[1:])]
+    else:
+        pairs = [x.strip() for x in spec.split(",")]
+    entries = [tuple(t.strip() for t in x.split("=", 1)) for x in pairs if "=" in x]
+    bad = [t for _, t in entries if t not in TARGET_BONES]
+    if bad:
+        raise SystemExit(f"--map targets must be one of {TARGET_BONES}, got {bad}")
+    return entries
 
 
 def import_model(path):
@@ -94,48 +103,74 @@ def bounds(points):
 
 def main():
     args = parse_args()
-    explicit = dict(pair.split("=", 1) for pair in args.map.split(",") if "=" in pair)
-    bad = [t for t in explicit.values() if t not in TARGET_BONES]
-    if bad:
-        raise SystemExit(f"--map targets must be one of {TARGET_BONES}, got {bad}")
+    entries = load_map(args.map) if args.map else []
+    explicit = dict(entries)
+    pivot_bone = {}
+    for bone, target in entries:
+        pivot_bone.setdefault(target, bone)
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     import_model(args.input)
+    bpy.context.view_layer.update()
 
-    armatures = [o for o in bpy.data.objects if o.type == "ARMATURE"]
-    meshes = [o for o in bpy.data.objects if o.type == "MESH"]
-    if not armatures or not meshes:
-        raise SystemExit("Need a rigged model: found no armature or no mesh")
-    arm = armatures[0]
-
-    # Rest pose so joint positions match the bind pose.
+    # Only meshes skinned to an armature; the glTF importer also adds hidden
+    # helper meshes (bone display shapes) that must be ignored.
+    meshes = [o for o in bpy.data.objects if o.type == "MESH" and o.find_armature()]
+    if not meshes:
+        raise SystemExit("Need a rigged model: found no mesh skinned to an armature")
+    arm = meshes[0].find_armature()
     arm.data.pose_position = "REST"
     bpy.context.view_layer.update()
 
-    # Unparent meshes keeping their transforms, then join them.
+    # Source space -> Arma space (forward +Y, up +Z, right +X).
+    up, fwd = axis(args.src_up), axis(args.src_forward)
+    if abs(up.dot(fwd)) > 1e-6:
+        raise SystemExit("--src-up and --src-forward must be different axes")
+    right = fwd.cross(up)
+    to_arma = Matrix((right, fwd, up))  # rows: new x, y, z expressed in source space
+
+    # Bake each mesh into world space, then rotate into Arma space.
+    for m in meshes:
+        m.data.transform(m.matrix_world)
+        m.data.transform(to_arma.to_4x4())
+        m.parent = None
+        m.matrix_world = Matrix.Identity(4)
+    joints = {b.name: to_arma @ (arm.matrix_world @ b.head_local) for b in arm.data.bones}
+
+    # Join into one mesh.
     bpy.ops.object.select_all(action="DESELECT")
     for m in meshes:
         m.select_set(True)
     bpy.context.view_layer.objects.active = meshes[0]
-    bpy.ops.object.parent_clear(type="CLEAR_KEEP_TRANSFORM")
     if len(meshes) > 1:
         bpy.ops.object.join()
     mesh = bpy.context.view_layer.objects.active
     mesh.name = "LOD_1"
-    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    for mod in list(mesh.modifiers):
+        mesh.modifiers.remove(mod)
 
-    # Joint positions in world space, before anything moves.
-    joints = {b.name: arm.matrix_world @ b.head_local for b in arm.data.bones}
-
-    # Scale mesh and joints so the body length (front-back, Y) is --scale-to.
+    # Scale so nose-to-tail (Y) length is --scale-to, origin at the bounding-box centre.
     lo, hi = bounds([v.co for v in mesh.data.vertices])
     factor = args.scale_to / max(hi.y - lo.y, 1e-6)
-    for v in mesh.data.vertices:
-        v.co *= factor
-    joints = {n: p * factor for n, p in joints.items()}
+    centre = (lo + hi) / 2
+    xform = Matrix.Scale(factor, 4) @ Matrix.Translation(-centre)
+    mesh.data.transform(xform)
+    joints = {n: xform @ p for n, p in joints.items()}
 
     # Rigid selections from skin weights.
-    bone_target = {b.name: map_bone(b, explicit) for b in arm.data.bones}
+    def map_bone(bone):
+        b = bone
+        while b is not None:
+            if b.name in explicit:
+                return explicit[b.name]
+            b = b.parent
+        n = bone.name.lower()
+        for pattern, target in BONE_RULES:
+            if re.search(pattern, n):
+                return target.format(side="r" if joints[bone.name].x > 0 else "l")
+        return "body"
+
+    bone_target = {b.name: map_bone(b) for b in arm.data.bones}
     groups = {g.index: g.name for g in mesh.vertex_groups}
     assignment = {t: [] for t in TARGET_BONES}
     for v in mesh.data.vertices:
@@ -143,8 +178,6 @@ def main():
         target = bone_target.get(groups.get(best.group), "body") if best else "body"
         assignment[target].append(v.index)
 
-    for mod in list(mesh.modifiers):
-        mesh.modifiers.remove(mod)
     mesh.vertex_groups.clear()
     for target, idx in assignment.items():
         vg = mesh.vertex_groups.new(name=target)
@@ -153,7 +186,15 @@ def main():
     print("Selection sizes:", {t: len(i) for t, i in assignment.items()})
     empty = [t for t, i in assignment.items() if not i and t != "body"]
     if empty:
-        print(f"WARNING: no vertices for {empty}. Check bone names or pass --map.")
+        print(f"WARNING: no vertices for {empty}. Check --map.")
+
+    # In Arma space the left wing must be on -X.
+    for side, sign in (("l", -1), ("r", 1)):
+        idx = assignment[f"wing_{side}"]
+        if idx:
+            mean_x = sum(mesh.data.vertices[i].co.x for i in idx) / len(idx)
+            if mean_x * sign < 0:
+                print(f"WARNING: wing_{side} is on the wrong side; check --src-up/--src-forward.")
 
     # Decimate (vertex groups survive the collapse decimator).
     tri_count = sum(len(p.vertices) - 2 for p in mesh.data.polygons)
@@ -167,56 +208,81 @@ def main():
     bpy.ops.mesh.quads_convert_to_tris()
     bpy.ops.object.mode_set(mode="OBJECT")
 
+    # Arma culls back faces. Thin feather/wing planes from double-sided source
+    # materials need a flipped copy or they vanish when seen from the other side.
+    two_sided = {i for i, m in enumerate(mesh.data.materials) if m and not m.use_backface_culling}
+    if two_sided and not args.single_sided:
+        bm = bmesh.new()
+        bm.from_mesh(mesh.data)
+        faces = [f for f in bm.faces if f.material_index in two_sided]
+        dup = bmesh.ops.duplicate(bm, geom=faces)
+        new_faces = [g for g in dup["geom"] if isinstance(g, bmesh.types.BMFace)]
+        bmesh.ops.reverse_faces(bm, faces=new_faces)
+        bm.to_mesh(mesh.data)
+        bm.free()
+        print(f"Added {len(new_faces)} back faces for double-sided materials")
+
     # Memory LOD: two points per axis.
     lo, hi = bounds([v.co for v in mesh.data.vertices])
-    centre = (lo + hi) / 2
-    half_len = (hi.y - lo.y) / 2
-    fwd = Vector((0, 0.04, 0))  # wing axes run front to back
+    mid = (lo + hi) / 2
+    half = (hi.y - lo.y) / 2
+    along = Vector((0, 0.03, 0))   # wing axes run front to back
+    vertical = Vector((0, 0, 0.05))
 
-    def joint_for(target, key):
-        names = [n for n, t in bone_target.items() if t == target]
-        return joints[min(names, key=key)] if names else None
+    def pivot(target):
+        if target in pivot_bone:
+            return joints[pivot_bone[target]]
+        names = [n for n, t in bone_target.items() if t == target and joints[n].length > 1e-6]
+        return joints[min(names, key=lambda n: abs(joints[n].x))] if names else None
 
-    axes = {"axis_body": (centre - Vector((0, half_len, 0)), centre + Vector((0, half_len, 0)))}
-    neck = joint_for("head", key=lambda n: joints[n].z)            # lowest head bone = neck
-    if neck is not None:
-        axes["axis_head"] = (neck, neck + Vector((0, 0, 0.1)))
-    for side in ("l", "r"):
-        for part in ("wing", "wingtip"):
-            j = joint_for(f"{part}_{side}", key=lambda n: abs(joints[n].x))  # innermost joint
-            if j is not None:
-                axes[f"axis_{part}_{side}"] = (j - fwd, j + fwd)
+    axes = {"axis_body": (Vector((0, mid.y + half, mid.z)), Vector((0, mid.y - half, mid.z)))}
+    head = pivot("head")
+    if head is not None:
+        axes["axis_head"] = (head, head + vertical)
+    for part in ("wing_l", "wingtip_l", "wing_r", "wingtip_r"):
+        p = pivot(part)
+        if p is not None:
+            axes[f"axis_{part}"] = (p + along, p - along)
 
     mem_mesh = bpy.data.meshes.new("Memory")
     bm = bmesh.new()
-    order = []
-    for name, (a, b) in axes.items():
+    for a, b in axes.values():
         bm.verts.new(a)
         bm.verts.new(b)
-        order.append(name)
     bm.to_mesh(mem_mesh)
     bm.free()
     mem = bpy.data.objects.new("Memory", mem_mesh)
     bpy.context.collection.objects.link(mem)
-    for i, name in enumerate(order):
+    for i, name in enumerate(axes):
         mem.vertex_groups.new(name=name).add([2 * i, 2 * i + 1], 1.0, "REPLACE")
-    missing = [n for n in ("axis_head", "axis_wing_l", "axis_wing_r", "axis_wingtip_l", "axis_wingtip_r")
-               if n not in axes]
+    missing = [f"axis_{t}" for t in TARGET_BONES if t != "body" and f"axis_{t}" not in axes]
     if missing:
         print(f"WARNING: missing memory axes {missing}; place them by hand.")
+    for name, (a, _) in axes.items():
+        print(f"  {name}: {tuple(round(c, 3) for c in a)}")
 
     # Geometry LOD: a box around the body selection.
-    # Read membership from the vertex group: decimation renumbered the vertices.
     body_gi = mesh.vertex_groups["body"].index
     body_pts = [v.co for v in mesh.data.vertices if any(g.group == body_gi for g in v.groups)]
     glo, ghi = bounds(body_pts or [v.co for v in mesh.data.vertices])
-    bpy.ops.mesh.primitive_cube_add(location=(glo + ghi) / 2)
-    geo = bpy.context.active_object
-    geo.name = "Geometry"
-    geo.dimensions = ghi - glo
-    bpy.ops.object.transform_apply(scale=True)
+    gm = bpy.data.meshes.new("Geometry")
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1.0)
+    for v in bm.verts:
+        v.co = Vector((glo.x + (v.co.x + 0.5) * (ghi.x - glo.x),
+                       glo.y + (v.co.y + 0.5) * (ghi.y - glo.y),
+                       glo.z + (v.co.z + 0.5) * (ghi.z - glo.z)))
+    bm.to_mesh(gm)
+    bm.free()
+    geo = bpy.data.objects.new("Geometry", gm)
+    bpy.context.collection.objects.link(geo)
 
-    bpy.data.objects.remove(arm, do_unlink=True)
+    # Keep only the three LOD objects.
+    for obj in list(bpy.data.objects):
+        if obj not in (mesh, mem, geo):
+            bpy.data.objects.remove(obj, do_unlink=True)
+
+    print("Size (m): span %.3f  length %.3f  height %.3f" % tuple(hi - lo))
     bpy.ops.wm.save_as_mainfile(filepath=args.output)
     print(f"Saved {args.output}")
 

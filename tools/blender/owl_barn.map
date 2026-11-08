@@ -1,0 +1,10 @@
+# Bone -> selection mapping for "BarnOwl" by BloodTigerWolfSketchF.
+# Each entry covers the bone and all its descendants. Everything else is "body".
+# Positions are glTF bind pose (owl faces +Z, +X is its left).
+Bone.007_011  = head       # neck, z 3.24, carries head, beak and eyes
+Bone.012_020  = wing_l     # left shoulder x 0.67 -> humerus -> forearm
+Bone.020_0101 = wing_l     # left covert chain
+Bone.014_022  = wingtip_l  # left wrist x 5.96, hand and primaries
+Bone.153_0104 = wing_r     # right shoulder
+Bone.258_0186 = wing_r     # right covert chain
+Bone.155_0106 = wingtip_r  # right wrist

@@ -19,6 +19,8 @@ Nothing is synced over the network, and the mod is purely cosmetic. Players with
 | `addons/main` | Scripts and the `zom_settings` tunables (`config.cpp`) |
 | `addons/owl` | `owl.p3d`, textures and `model.cfg` (skeleton and animations) |
 | `tools/blender/prepare_owl.py` | Turns a downloaded rigged owl into Arma-ready selections and memory points |
+| `tools/blender/export_p3d.py` | Sets LODs and materials, then exports `owl.p3d` through A3OB |
+| `tools/blender/owl_barn.map` | Bone-to-selection mapping for the barn owl rig |
 | `source/owl` | The original downloaded model |
 | `docs/BUILDING.md` | Full model pipeline and build steps |
 
@@ -27,7 +29,8 @@ Nothing is synced over the network, and the mod is purely cosmetic. Players with
 - [x] Mod scaffold, scripts, `model.cfg`, Blender prep script
 - [x] Owl model chosen: "BarnOwl" by BloodTigerWolfSketchF (Sketchfab Free Standard), see `CREDITS.md`
 - [x] Owl source downloaded (kept local, git-ignored)
-- [ ] Run the Blender pipeline, then export `owl.p3d` and the `.paa` textures
+- [x] Blender prep pipeline run and checked (selections, pivots, scale, back faces)
+- [ ] Export `owl.p3d` (needs the A3OB add-on) and convert textures to `.paa` (ImageToPAA)
 - [ ] Test in game (single player and multiplayer)
 
 ## Build

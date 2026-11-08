@@ -32,7 +32,7 @@ class CfgFunctions {
 // Tunables, read at runtime so other mods / missions can override them.
 class zom_settings {
     model = "\z\zom\addons\owl\owl.p3d";
-    scale = 1.0;                // owl model is authored at real-world size (~0.6 m)
+    scale = 1.0;                // owl model is real-world size (barn owl: 0.35 m long, 0.84 m span)
     flapFrequency = 2.4;        // wing beats per second while flapping
     glideChance = 0.35;         // share of time spent gliding with wings held out
     scanInterval = 2;           // seconds between checks for new / replaced curator birds
