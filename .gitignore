@@ -4,3 +4,6 @@ releases/
 *.blend1
 source/owl/*.blend
 !source/owl/README.md
+# Owl source is a CGTrader store asset: its licence forbids redistributing the source files.
+source/owl/*
+!source/owl/README.md

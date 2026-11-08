@@ -25,7 +25,8 @@ Nothing is synced over the network, and the mod is purely cosmetic. Players with
 ## Status
 
 - [x] Mod scaffold, scripts, `model.cfg`, Blender prep script
-- [ ] Pick the owl model (realistic, CC0/CC-BY, rigged) and credit it in `CREDITS.md`
+- [x] Owl model chosen: "Night Owl" by Amit.Rotem (CGTrader), see `CREDITS.md`
+- [ ] Buy or download the owl and confirm its licence allows use in a game mod
 - [ ] Run the Blender pipeline, then export `owl.p3d` and the `.paa` textures
 - [ ] Test in game (single player and multiplayer)
 
