@@ -1,10 +1,7 @@
 # Owl source model
 
-Download "Night Owl" by Amit.Rotem from CGTrader (see /CREDITS.md) and place the
-`.blend`, `.fbx` or `.glb` export here as `owl.glb` / `owl.fbx`.
+"Barn owl" by Joacooficial, CC-BY 4.0 (see /CREDITS.md). Save the Sketchfab glTF
+download here as `owl.glb` (or keep the unzipped `scene.gltf` folder).
 
-These files are git-ignored on purpose: CGTrader licences do not allow
-redistributing the source files.
-
-The model is about 69k faces. Run the prep script with `--tris 4000`, plus a second
-pass with `--tris 1000` for the distance LOD.
+It is already about 2.8k triangles, so run the prep script with `--tris 3000`
+(no real reduction) and a second pass with `--tris 1000` for the distance LOD.
