@@ -1,0 +1,6 @@
+.hemttout/
+releases/
+*.pbo
+*.blend1
+source/owl/*.blend
+!source/owl/README.md
