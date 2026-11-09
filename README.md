@@ -4,13 +4,15 @@ An Arma 3 mod that swaps the seagull circling every Zeus (curator) camera for a 
 
 ## How it works
 
-The Game Master module spawns a bird that follows each curator camera and stores it on the curator as the `bird` variable. This mod leaves that bird and its class alone, so ambient and respawn seagulls stay unchanged. Instead each client:
+The Game Master module keeps a seagull near each curator camera and stores it on the curator as the `bird` variable. This mod **removes that seagull and flies an owl in its place**:
 
-1. finds every curator's bird (`addons/main/functions/fn_init.sqf`),
-2. hides it locally and attaches a **local** owl simple object to it (`fn_attachOwl.sqf`), so the owl follows the vanilla flight path,
-3. drives the owl's `model.cfg` animations every frame (`fn_animateOwl.sqf`): a slow, deep wingbeat with trailing wingtips, glides with the wings held level, banking into turns, and head scanning.
+1. **Remove** (`fn_removeBirds.sqf`, every machine): the server deletes the vanilla bird, and so does the machine that owns it, which covers birds that exist only on the curator's PC. Ambient and respawn seagulls are untouched.
+2. **Share** (`fn_shareCamera.sqf`): while a player has Zeus open, their machine shares the camera position a few times a second, and only when it moves.
+3. **Fly** (`fn_owlFrame.sqf`, `fn_flyOwl.sqf`, every player): each client flies its own local owl around that position. It circles a little below the camera, chases it when it moves, banks into turns and keeps clear of terrain. It flaps when climbing or chasing, glides in between, and turns its head toward the camera.
 
-Nothing is synced over the network, and the mod is purely cosmetic. Players without it still see the seagull.
+Only the camera position crosses the network. All flight and animation is local.
+
+**The server must run the mod** for the seagull to be deleted. If only some clients have it, those clients hide the seagull locally and still see the owl, while everyone else keeps seeing the seagull. The mod never deletes the seagull for players who can't see the owl.
 
 ## Layout
 
