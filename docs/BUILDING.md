@@ -65,5 +65,6 @@ Tunables live in `class zom_settings` in `addons/main/config.cpp`: model path, s
 ## Known unknowns
 
 These are untested assumptions, so check them first in game:
-- The curator bird is read from `curatorLogic getVariable "bird"`, as the Game Master module documents. If a game update changes this, `fn_init.sqf` is the only file to change.
-- `animate [..., true]` on a local simple object updates every frame. If it doesn't, switch `createSimpleObject` to `createVehicleLocal` with a small `thingX` class.
+- The vanilla bird is read from `curatorLogic getVariable "bird"`, as the Game Master module documents. If the module re-creates its bird after deletion, `fn_removeBirds.sqf` deletes it up to 10 times per curator, then switches to hiding new ones (logged as `[ZOM]` in the RPT). If that message appears, tell us the bird's class (`typeOf`) so it can be replaced through config instead.
+- Rotation signs in `model.cfg` (Arma's rotation direction about an axis). If the wings beat the wrong way or the head looks away from the camera, flip the `angle0`/`angle1` signs.
+- `animate [..., true]` on a local simple object updates every frame.

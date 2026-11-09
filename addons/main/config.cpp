@@ -1,10 +1,14 @@
-// Zeus Owl - swaps the bird that circles a Zeus (curator) camera for an owl.
+// Zeus Owl - replaces the seagull that circles a Zeus (curator) camera with an owl.
 //
-// How it works: the Game Master module spawns a bird that follows each curator's
-// camera and stores it on the curator logic as the "bird" variable. We don't
-// replace that bird's class (that would also change every ambient/respawn seagull).
-// Instead every client hides that bird locally and attaches a local owl model
-// to it, so the owl follows the vanilla flight path without extra network traffic.
+// How it works:
+//  - The Game Master module keeps a bird near each curator camera, stored on the
+//    curator logic as "bird". The server (or the machine that owns the bird)
+//    deletes it. Clients without the server running the mod only hide it locally,
+//    so the mod never deletes the seagull for players who don't have it.
+//  - The curator's machine shares its camera position (a few times a second).
+//  - Every client flies its own local owl around that position, with owl-like
+//    flight (circling, catching up, banking, flapping and gliding) and animates it.
+//    Only the camera position crosses the network.
 
 class CfgPatches {
     class zom_main {
@@ -23,8 +27,10 @@ class CfgFunctions {
         class main {
             file = "\z\zom\addons\main\functions";
             class init { postInit = 1; };
-            class attachOwl {};
-            class animateOwl {};
+            class removeBirds {};
+            class shareCamera {};
+            class owlFrame {};
+            class flyOwl {};
         };
     };
 };
@@ -33,7 +39,21 @@ class CfgFunctions {
 class zom_settings {
     model = "\z\zom\addons\owl\owl.p3d";
     scale = 1.0;                // owl model is real-world size (barn owl: 0.35 m long, 0.84 m span)
+
+    // Flight
+    orbitRadiusMin = 6;         // metres from the camera the owl circles at
+    orbitRadiusMax = 11;
+    orbitHeight = -2.5;         // metres relative to the camera (owl flies a little below it)
+    orbitSpeed = 7;             // m/s cruising speed while circling (barn owls cruise ~7 m/s)
+    maxSpeed = 30;              // m/s cap while chasing a fast-moving camera
+    teleportDistance = 300;     // further than this from its target the owl just reappears
+    minClearance = 3;           // metres above terrain / sea
+
+    // Animation
     flapFrequency = 2.4;        // wing beats per second while flapping
-    glideChance = 0.35;         // share of time spent gliding with wings held out
-    scanInterval = 2;           // seconds between checks for new / replaced curator birds
+    glideChance = 0.4;          // chance to glide when cruising level
+
+    // Networking / housekeeping
+    cameraShareInterval = 0.25; // seconds between camera position updates from the curator
+    birdScanInterval = 0.5;     // seconds between checks for vanilla curator birds
 };
